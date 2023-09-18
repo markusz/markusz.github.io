@@ -1,0 +1,204 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  
+  <title>Simplified GPU-powered cryptocurrency mining on Ubuntu 16.04 | Works on my machine</title>
+  <meta name="author" content="Markus Ziller">
+  
+  <meta name="description" content="Talking about tech stuff I do">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+  <meta property="og:title" content="Simplified GPU-powered cryptocurrency mining on Ubuntu 16.04"/>
+  <meta property="og:site_name" content="Works on my machine"/>
+
+  
+    <meta property="og:image" content=""/>
+  
+
+  <link rel="shortcut icon" href="/favicon.png">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  <!--[if lt IE 9]><script src="https://cdn.jsdelivr.net/npm/html5shiv@3.7.3/dist/html5shiv.min.js"></script><![endif]-->
+  
+
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+<body>
+  <header id="header" class="inner"><div class="alignleft">
+  <h1><a href="/">Works on my machine</a></h1>
+  <h2><a href="/">console.log(&#39;sdfadgqgadfggaggfsfsfsdthis message should not appear wtf&#39;)</a></h2>
+</div>
+<nav id="main-nav" class="alignright">
+  <ul>
+    
+      <li><a href="/null">Home</a></li>
+    
+      <li><a href="/archives">Archives</a></li>
+    
+  </ul>
+  <div class="clearfix"></div>
+</nav>
+<div class="clearfix"></div>
+</header>
+  <div id="content" class="inner">
+    <div id="main-col" class="alignleft"><div id="wrapper"><article id="post-ccminer-ubuntu" class="h-entry post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  
+  <div class="post-content">
+    <header>
+      
+        <div class="icon"></div>
+        <time class="dt-published" datetime="2017-05-14T14:37:11.000Z"><a href="/2017/05/14/ccminer-ubuntu/">14.05.2017</a></time>
+      
+      
+  
+    <h1 class="p-name title" itemprop="headline name">Simplified GPU-powered cryptocurrency mining on Ubuntu 16.04</h1>
+  
+
+    </header>
+    <div class="e-content entry" itemprop="articleBody">
+      
+        <p>I recently won $12k in Microsoft Azure credits at a Hackathon, which I didn’t have any real use for. Since I didn’t want them to expire either, I decided to at last mine some cryptocurrency on Azure’s GPU-powered VMs of the NV-series.<br>Getting everything set up on Ubuntu 16.04 proved to be a very manual and tedious process, especially when spinning up several VMs.</p>
+<p>To that end, I created <a target="_blank" rel="noopener" href="https://github.com/markusz/gpu-mining-on-ubuntu16">some scripts</a> that make installing the required miners incl. all dependencies, libs and frameworks a lot easier.<br>In the <code>/steps</code> folder of the repo, you will find a few scripts that - when executed in the given order with <strong>root permissions</strong> - will setup everything you need to start mining with ccminer</p>
+<h2 id="1-Prepare-packages"><a href="#1-Prepare-packages" class="headerlink" title="1. Prepare packages"></a>1. Prepare packages</h2><p>We create a subfolder <code>~/mining</code> in the users home directory, where we will install everything we’re going to need. We also have to install a number of packages later steps depend on.</p>
+<figure class="highlight bash"><figcaption><span>1_aptget.sh</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">mkdir</span> ~/mining</span><br><span class="line">apt-get update &amp;&amp; apt-get -y dist-upgrade</span><br><span class="line">apt-get install gcc g++ build-essential libssl-dev automake linux-headers-$(<span class="built_in">uname</span> -r) git gawk libcurl4-openssl-dev libjansson-dev xorg libc++-dev libgmp-dev python-dev</span><br></pre></td></tr></table></figure>
+
+<h2 id="2-Download-Nvidia-Driver-and-CUDA"><a href="#2-Download-Nvidia-Driver-and-CUDA" class="headerlink" title="2. Download Nvidia Driver and CUDA"></a>2. Download Nvidia Driver and CUDA</h2><p>At the time of writing this, versions 375.66 of the Nvidia driver and 8.0 of CUDA were the most recent - change accordingly, if newer versions are available.</p>
+<figure class="highlight bash"><figcaption><span>2_getinstaller.sh</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cd</span> ~/mining &amp;&amp; wget http://us.download.nvidia.com/XFree86/Linux-x86_64/375.66/NVIDIA-Linux-x86_64-375.66.run</span><br><span class="line"><span class="built_in">chmod</span> +x ~/mining/NVIDIA-Linux-x86_64-375.66.run</span><br><span class="line"><span class="built_in">cd</span> ~/mining &amp;&amp; wget https://developer.nvidia.com/compute/cuda/8.0/prod/local_installers/cuda-repo-ubuntu1604-8-0-local_8.0.44-1_amd64-deb</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="3a-Disable-Nouveau-driver"><a href="#3a-Disable-Nouveau-driver" class="headerlink" title="3a. Disable Nouveau driver"></a>3a. Disable Nouveau driver</h2><p>In order to use the Nvidia Driver, we first will have to disable the default <code>Noveau</code> driver. The installation of the Nvidia driver will fail on the first run, but will also disable the Noveau driver, so that after rebooting the machine, the installation will work.</p>
+<figure class="highlight bash"><figcaption><span>3a_install-nvidia-driver.sh</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">~/mining/NVIDIA-Linux-x86_64-375.66.run --accept-license --no-questions --disable-nouveau --no-install-compat32-libs</span><br></pre></td></tr></table></figure>
+
+<h2 id="3b-Install-Nvidia-driver"><a href="#3b-Install-Nvidia-driver" class="headerlink" title="3b. Install Nvidia driver"></a>3b. Install Nvidia driver</h2><p><code>Noveau</code> driver has been disabled by the previous run of the Nvidia Installer. This will now work</p>
+<figure class="highlight bash"><figcaption><span>3b_install-nvidia-driver.sh</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">~/mining/NVIDIA-Linux-x86_64-375.66.run --accept-license --no-questions --disable-nouveau --no-install-compat32-libs</span><br></pre></td></tr></table></figure>
+
+<h2 id="4-Install-CUDA"><a href="#4-Install-CUDA" class="headerlink" title="4. Install CUDA"></a>4. Install CUDA</h2><p>Cryptocurrencies are obtained by using computing power to calculate for a large number of input variables (hashes) if they match certain criteria.<br>The possibility of finding a match is often referred to as the difficulty of the currency, i.e. at the time of writing Bitcoin’s difficulty was 595,921,917,085, meaning that only one out of 600 Billion checks would result in an actual positive result, aka a Bitcoin.<br>It is obvious that doing more calculations in parallel is favourable to the yield of the mining. </p>
+<p>That’s where GPUs come in - they have significantly more computing units, thus allowing a much higher rate of parallelism at checking hashes.<br>CUDA is a technology developed by Nvidia that enables using GPUs to process general purpose calculations (such as checking hashes). </p>
+<p>This speeds up calculations significantly, simply due to the total number of cores available (4096 cores in an Nvidia M60 vs. 4 in a current gen Intel i7)</p>
+<figure class="highlight bash"><figcaption><span>4_install-cuda.sh</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">dpkg -i ~/mining/cuda-repo-ubuntu1604-8-0-local_8.0.44-1_amd64-deb</span><br><span class="line"></span><br><span class="line">apt-get update</span><br><span class="line">apt-get install cuda-toolkit-8-0</span><br><span class="line">usermod -a -G video $(<span class="built_in">whoami</span>)</span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;&quot;</span> &gt;&gt; ~/.bashrc</span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;export PATH=/usr/local/cuda-8.0/bin:<span class="variable">$PATH</span>&quot;</span> &gt;&gt; ~/.bashrc</span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;export LD_LIBRARY_PATH=/usr/local/cuda8.0/lib64:<span class="variable">$LD_LIBRARY_PATH</span>&quot;</span> &gt;&gt; ~/.bashrc</span><br></pre></td></tr></table></figure>
+
+<p><code>dkpg</code> might take a while. If shell script hangs or dies, try executing it manually.</p>
+<p><strong>Reboot again</strong></p>
+<h2 id="5-Install-ccminer"><a href="#5-Install-ccminer" class="headerlink" title="5. Install ccminer"></a>5. Install ccminer</h2><p>After a reboot, we have all the drivers installed and ready. The only thing missing is a mining software that knows how to do the actual calculations that will result in coins.<br>ccminer is one of the most widespread solutions and provides support for a large number of different currencies</p>
+<figure class="highlight bash"><figcaption><span>5_make-ccminer.sh</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cd</span> /usr/local/cuda/samples/1_Utilities/deviceQuery</span><br><span class="line">make</span><br><span class="line">/usr/local/cuda/samples/1_Utilities/deviceQuery/deviceQuery</span><br><span class="line"><span class="built_in">cd</span> ~/mining</span><br><span class="line">git <span class="built_in">clone</span> https://github.com/tpruvot/ccminer</span><br><span class="line"><span class="built_in">cd</span> ccminer</span><br><span class="line">git checkout linux</span><br><span class="line">./autogen.sh</span><br><span class="line">./configure</span><br><span class="line">make</span><br><span class="line">make install</span><br></pre></td></tr></table></figure>
+
+<h3 id="Other-miners"><a href="#Other-miners" class="headerlink" title="Other miners"></a>Other miners</h3><p>Setting up other miners (i.e. Marlin for Siacoin - see 6_install-marlin.sh)should be fairly easy at this point since most complexity goes into preparing the system to correctly utilize its GPU units.</p>
+<p>Happy mining</p>
+
+      
+    </div>
+    <footer>
+      
+        
+        
+  
+  <div class="tags">
+    <a href="/tags/Blockchain/">Blockchain</a>, <a href="/tags/CryptoCurrency/">CryptoCurrency</a>, <a href="/tags/Azure/">Azure</a>
+  </div>
+
+      
+      <div class="clearfix"></div>
+    </footer>
+  </div>
+</article>
+
+
+<section id="comment">
+  <h1 class="title">Comments</h1>
+
+  
+      <div id="fb-root"></div>
+<script>
+  (function(d, s, id) {
+    var js, fjs = d.getElementsByTagName(s)[0];
+    if (d.getElementById(id)) return;
+    js = d.createElement(s); js.id = id;
+    js.src = "//connect.facebook.net/en_US/all.js#xfbml=1&appId=123456789012345";
+    fjs.parentNode.insertBefore(js, fjs);
+  }(document, 'script', 'facebook-jssdk'));
+</script>
+
+<div class="fb-comments" data-href="https://www.works-on-my-machine.com/2017/05/14/ccminer-ubuntu/index.html" data-num-posts="5" data-width="840" data-colorscheme="light"></div>
+      
+  
+</section>
+
+</div></div>
+    <aside id="sidebar" class="alignright">
+  <div class="search">
+  <form action="//google.com/search" method="get" accept-charset="utf-8">
+    <input type="search" name="q" results="0" placeholder="Search">
+    <input type="hidden" name="as_sitesearch" value="www.works-on-my-machine.com">
+  </form>
+</div>
+
+
+  
+
+  
+<div class="widget tag">
+  <h3 class="title">Tags</h3>
+  <ul class="entry">
+  
+    <li><a href="/tags/AWS/">AWS</a><small>1</small></li>
+  
+    <li><a href="/tags/Azure/">Azure</a><small>1</small></li>
+  
+    <li><a href="/tags/Blockchain/">Blockchain</a><small>1</small></li>
+  
+    <li><a href="/tags/CryptoCurrency/">CryptoCurrency</a><small>1</small></li>
+  
+    <li><a href="/tags/Data/">Data</a><small>1</small></li>
+  
+    <li><a href="/tags/Lambda/">Lambda</a><small>1</small></li>
+  
+    <li><a href="/tags/Python/">Python</a><small>1</small></li>
+  
+    <li><a href="/tags/S3/">S3</a><small>1</small></li>
+  
+    <li><a href="/tags/Tableau/">Tableau</a><small>1</small></li>
+  
+  </ul>
+</div>
+
+</aside>
+    <div class="clearfix"></div>
+  </div>
+  <footer id="footer" class="inner"><div class="alignleft">
+  
+  &copy; 2023 Markus Ziller
+  
+</div>
+<div class="clearfix"></div></footer>
+  
+<script src="/js/jquery-3.4.1.min.js"></script>
+
+
+<script src="/js/jquery.imagesloaded.min.js"></script>
+
+
+<script src="/js/gallery.js"></script>
+
+
+
+
+
+
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+
+
+<script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+<script>
+(function($){
+  $('.fancybox').fancybox();
+})(jQuery);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  
+  <title>Batch checking contents of an S3 bucket with AWS lambda | Works on my machine</title>
+  <meta name="author" content="Markus Ziller">
+  
+  <meta name="description" content="Talking about tech stuff I do">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+  <meta property="og:title" content="Batch checking contents of an S3 bucket with AWS lambda"/>
+  <meta property="og:site_name" content="Works on my machine"/>
+
+  
+    <meta property="og:image" content=""/>
+  
+
+  <link rel="shortcut icon" href="/favicon.png">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  <!--[if lt IE 9]><script src="https://cdn.jsdelivr.net/npm/html5shiv@3.7.3/dist/html5shiv.min.js"></script><![endif]-->
+  
+
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+<body>
+  <header id="header" class="inner"><div class="alignleft">
+  <h1><a href="/">Works on my machine</a></h1>
+  <h2><a href="/">console.log(&#39;sdfadgqgadfggaggfsfsfsdthis message should not appear wtf&#39;)</a></h2>
+</div>
+<nav id="main-nav" class="alignright">
+  <ul>
+    
+      <li><a href="/null">Home</a></li>
+    
+      <li><a href="/archives">Archives</a></li>
+    
+  </ul>
+  <div class="clearfix"></div>
+</nav>
+<div class="clearfix"></div>
+</header>
+  <div id="content" class="inner">
+    <div id="main-col" class="alignleft"><div id="wrapper"><article id="post-s3-lambda" class="h-entry post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  
+  <div class="post-content">
+    <header>
+      
+        <div class="icon"></div>
+        <time class="dt-published" datetime="2017-04-20T16:57:49.000Z"><a href="/2017/04/20/s3-lambda/">20.04.2017</a></time>
+      
+      
+  
+    <h1 class="p-name title" itemprop="headline name">Batch checking contents of an S3 bucket with AWS lambda</h1>
+  
+
+    </header>
+    <div class="e-content entry" itemprop="articleBody">
+      
+        <p>A while ago, I faced the challenge to check the contents of a few thousand folders in an AWS bucket to see if they meet certain criteria, i.e. number and type of files per folder, etc.<br>The best way to achieve this proved to be a node.js script ran on Lambda with an API Gateway in front, for a number of reasons:</p>
+<ul>
+<li>The aws-sdk is preinstalled for every lambda function and can be required without any installation</li>
+<li>Granting Lambda read access to a certain bucket is quite easy</li>
+<li>Lambdas can have a number of triggers, i.e. Any AWS event, HTTP requests through API Gateway or a cron like execution</li>
+<li>API Gateway makes it easy to provide a simple REST interface for your endpoint or even offer a user-friendly UI (Minimalistic Angular 1 in S3 my case)</li>
+<li>Most things can be handled by the serverless framework for you, without the need to fiddle around with AWS</li>
+</ul>
+<h3 id="The-Script"><a href="#The-Script" class="headerlink" title="The Script"></a>The Script</h3><p>One thing worth mentioning is that AWS limits the number of objects per <code>listObjectsV2</code> call to 1000. If your bucket contains more elements (in my case up to 25.000), your API response will contain a field called <code>NextContinuationToken</code> which allows you to fire another request that continues where the first request got capped.</p>
+<p>We use these tokens to recursive call the <code>getObjects</code> call until the list is finished and call <code>handleObjectList</code> on the elements of each call. An object outside the call scope can be used to collect data of each call and keep it for the <code>onFinsihed</code> function to calculate the final result.</p>
+<p>In this example we also provide parameters to ignore certain elements when invoking the execution via REST call or set the bucket name dynamically. This is of course optional, but proved to be quite useful for my use case.</p>
+<p>Another thing that I found quite useful was to publish the results to an SNS topic for further processing - this is optional as well, but I nonetheless left the code in the snippet.</p>
+<p>The actual script is not really rocket science and looks as follows. </p>
+<figure class="highlight js"><figcaption><span>bucket_check.js</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&#x27;use strict&#x27;</span>;</span><br><span class="line"></span><br><span class="line"><span class="variable language_">module</span>.<span class="property">exports</span>.<span class="property">checkBucket</span> = <span class="function">(<span class="params">event, context, callback</span>) =&gt;</span> &#123;</span><br><span class="line">  <span class="keyword">const</span> <span class="variable constant_">AWS</span> = <span class="built_in">require</span>(<span class="string">&#x27;aws-sdk&#x27;</span>);</span><br><span class="line">  <span class="keyword">const</span> s3 = <span class="keyword">new</span> <span class="variable constant_">AWS</span>.<span class="title function_">S3</span>();</span><br><span class="line">  <span class="keyword">const</span> sns = <span class="keyword">new</span> <span class="variable constant_">AWS</span>.<span class="title function_">SNS</span>();</span><br><span class="line"></span><br><span class="line">  <span class="keyword">const</span> requestBody = <span class="title class_">JSON</span>.<span class="title function_">parse</span>(event.<span class="property">body</span>);</span><br><span class="line"></span><br><span class="line">  <span class="comment">// [OPTIONAL] can be used to store results of the iterations</span></span><br><span class="line">  <span class="keyword">const</span> resultJSON = &#123;&#125;;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// [OPTIONAL] provided queryParams to control script, i.e. &amp;ignore=1,2,3 could be used to ignore elements 1,2 and 3</span></span><br><span class="line">  <span class="keyword">const</span> scriptParams = &#123;</span><br><span class="line">    <span class="attr">ignore</span>: requestBody.<span class="property">ignore</span> || []</span><br><span class="line">  &#125;;</span><br><span class="line"></span><br><span class="line">  <span class="variable language_">console</span>.<span class="title function_">log</span>(scriptParams);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">const</span> s3Params = &#123;</span><br><span class="line">    <span class="title class_">Bucket</span>: requestBody.<span class="property">bucket</span>,</span><br><span class="line">    <span class="title class_">Prefix</span>: <span class="string">&#x27;your/folder/within/the/bucket&#x27;</span> <span class="comment">// limits the results to only a certain folder</span></span><br><span class="line">  &#125;;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">let</span> <span class="title function_">onFinished</span> = (<span class="params"></span>) =&gt; &#123;</span><br><span class="line">    <span class="keyword">const</span> result = &#123;</span><br><span class="line">      <span class="attr">checkedBucket</span>: s3Params.<span class="property">Bucket</span>,</span><br><span class="line">      <span class="comment">// ..</span></span><br><span class="line">    &#125;;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// SNS is optional, but proved quite useful. If not needed, just call callback(null, response) directly</span></span><br><span class="line">    sns.<span class="title function_">publish</span>(&#123;</span><br><span class="line">      <span class="title class_">TopicArn</span>: <span class="string">&quot;arn:aws:sns:&lt;topic&gt;&quot;</span>,</span><br><span class="line">      <span class="title class_">Message</span>: <span class="title class_">JSON</span>.<span class="title function_">stringify</span>(result)</span><br><span class="line">    &#125;, <span class="function">(<span class="params">err, data</span>) =&gt;</span> &#123;</span><br><span class="line">      <span class="variable language_">console</span>.<span class="title function_">log</span>(err ? <span class="string">&#x27;error publishing to SNS&#x27;</span> : <span class="string">&#x27;Message published to SNS&#x27;</span>);</span><br><span class="line"></span><br><span class="line">      <span class="comment">// Required if you want to use an AWS API Gateway in front</span></span><br><span class="line">      <span class="keyword">const</span> response = &#123;</span><br><span class="line">        <span class="string">&quot;statusCode&quot;</span>: <span class="number">200</span>,</span><br><span class="line">        <span class="string">&quot;headers&quot;</span>: &#123;</span><br><span class="line">          <span class="string">&quot;Access-Control-Allow-Origin&quot;</span> : <span class="string">&quot;*&quot;</span>, <span class="comment">// Required for CORS support to work</span></span><br><span class="line">          <span class="string">&quot;Access-Control-Allow-Credentials&quot;</span> : <span class="literal">true</span> <span class="comment">// Required for cookies, authorization headers with HTTPS</span></span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="string">&quot;body&quot;</span>: <span class="title class_">JSON</span>.<span class="title function_">stringify</span>(result)</span><br><span class="line">      &#125;;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">      <span class="title function_">callback</span>(<span class="literal">null</span>, response);</span><br><span class="line">    &#125;);</span><br><span class="line">  &#125;;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">let</span> <span class="title function_">handleObjectList</span> = (<span class="params">data</span>) =&gt; &#123;</span><br><span class="line">    <span class="comment">// Keys of the form &quot;a/b/c.jpg&quot;</span></span><br><span class="line">    <span class="keyword">const</span> keys = data.<span class="property">Contents</span>.<span class="title function_">map</span>(<span class="function"><span class="params">c</span> =&gt;</span> c.<span class="property">Key</span>);</span><br><span class="line"></span><br><span class="line">    keys.<span class="title function_">forEach</span>(<span class="function"><span class="params">key</span> =&gt;</span> &#123;</span><br><span class="line">      <span class="comment">// do something with the filename, i.e. aggregate the data in resultJSON</span></span><br><span class="line">    &#125;);</span><br><span class="line">  &#125;;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">const</span> <span class="title function_">getObjects</span> = (<span class="params">token</span>) =&gt; &#123;</span><br><span class="line">    <span class="keyword">if</span> (token) &#123;</span><br><span class="line">      s3Params.<span class="property">ContinuationToken</span> = token;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    s3.<span class="title function_">listObjectsV2</span>(s3Params, <span class="function">(<span class="params">err, objectsResponse</span>) =&gt;</span> &#123;</span><br><span class="line">      <span class="keyword">if</span> (err) &#123;</span><br><span class="line">        <span class="variable language_">console</span>.<span class="title function_">log</span>(err, err.<span class="property">stack</span>); <span class="comment">// an error occurred</span></span><br><span class="line">      &#125;</span><br><span class="line">      <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="title function_">handleObjectList</span>(objectsResponse);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (objectsResponse.<span class="property">NextContinuationToken</span>) &#123;</span><br><span class="line">          <span class="variable language_">console</span>.<span class="title function_">log</span>(<span class="string">&#x27;Continuing Request with Token &#x27;</span>, objectsResponse.<span class="property">NextContinuationToken</span>);</span><br><span class="line">          <span class="comment">// Recursive call with the ContinuationToken of the previous request</span></span><br><span class="line">          <span class="title function_">getObjects</span>(objectsResponse.<span class="property">NextContinuationToken</span>)</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">          <span class="title function_">onFinished</span>();</span><br><span class="line">        &#125;</span><br><span class="line">      &#125;</span><br><span class="line">    &#125;);</span><br><span class="line">  &#125;;</span><br><span class="line"></span><br><span class="line">  <span class="title function_">getObjects</span>();</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="Deploy"><a href="#Deploy" class="headerlink" title="Deploy"></a>Deploy</h3><p>The easiest way of putting this to work is by getting everything set up by the <a target="_blank" rel="noopener" href="https://serverless.com/">Serverless framework</a>. In this example, it will</p>
+<ul>
+<li>Zip, upload and deploy your code into an Lambda function</li>
+<li>Create an API Gateway as an entry point</li>
+<li>Wire everything together and set the correct permissions and roles</li>
+</ul>
+<figure class="highlight yaml"><figcaption><span>serverless.yml</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">service:</span> <span class="string">bucket-checker</span></span><br><span class="line"></span><br><span class="line"><span class="attr">provider:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">aws</span></span><br><span class="line">  <span class="attr">runtime:</span> <span class="string">nodejs6.10</span></span><br><span class="line">  <span class="attr">region:</span> <span class="string">eu-central-1</span></span><br><span class="line">  <span class="attr">stage:</span> <span class="string">stage</span></span><br><span class="line">  <span class="attr">profile:</span> <span class="string">bucket-check</span></span><br><span class="line">  <span class="attr">memorySize:</span> <span class="number">1536</span></span><br><span class="line">  <span class="attr">timeout:</span> <span class="number">180</span></span><br><span class="line">  <span class="attr">iamRoleStatements:</span></span><br><span class="line">        <span class="bullet">-</span>  <span class="attr">Effect:</span> <span class="string">&quot;Allow&quot;</span></span><br><span class="line">           <span class="attr">Action:</span></span><br><span class="line">             <span class="bullet">-</span> <span class="string">&quot;s3:Get*&quot;</span></span><br><span class="line">             <span class="bullet">-</span> <span class="string">&quot;s3:List*&quot;</span></span><br><span class="line">           <span class="attr">Resource:</span> <span class="string">&quot;*&quot;</span></span><br><span class="line">        <span class="bullet">-</span>  <span class="attr">Effect:</span> <span class="string">&quot;Allow&quot;</span></span><br><span class="line">           <span class="attr">Action:</span></span><br><span class="line">             <span class="bullet">-</span> <span class="string">&quot;sns:*&quot;</span></span><br><span class="line">           <span class="attr">Resource:</span> <span class="string">&quot;*&quot;</span></span><br><span class="line"><span class="attr">functions:</span></span><br><span class="line">  <span class="attr">checkBucket:</span></span><br><span class="line">    <span class="attr">handler:</span> <span class="string">bucket_checker.checkBucket</span></span><br><span class="line">    <span class="attr">name:</span> <span class="string">$&#123;self:provider.stage&#125;-checkBucket</span></span><br><span class="line">    <span class="attr">description:</span> <span class="string">Checks</span> <span class="string">the</span> <span class="string">contents</span> <span class="string">of</span> <span class="string">a</span> <span class="string">given</span> <span class="string">S3</span> <span class="string">Bucket</span></span><br><span class="line">    <span class="attr">events:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">http:</span></span><br><span class="line">          <span class="attr">path:</span> <span class="string">bucket/validate</span></span><br><span class="line">          <span class="attr">method:</span> <span class="string">post</span></span><br><span class="line">          <span class="attr">cors:</span> <span class="literal">true</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="Regarding-runtime"><a href="#Regarding-runtime" class="headerlink" title="Regarding runtime"></a>Regarding runtime</h3><p>The scripts runtine depends on a number of factors, mostly memory size of the Lambda function, number of items in the bucket and type of processing done on these items.</p>
+<p>Using the maximum available memory size, a simple analysis of 25.000 items takes ~30s for my use case.</p>
+<p>If you find the runtime to be slow, make sure that you are utilizing the proper amount of memory. Make also sure to properly set the <code>Prefix</code> parameter in the S3 config, as this could greatly influence the number of items that have to be checked.</p>
+
+      
+    </div>
+    <footer>
+      
+        
+        
+  
+  <div class="tags">
+    <a href="/tags/AWS/">AWS</a>, <a href="/tags/S3/">S3</a>, <a href="/tags/Lambda/">Lambda</a>
+  </div>
+
+      
+      <div class="clearfix"></div>
+    </footer>
+  </div>
+</article>
+
+
+<section id="comment">
+  <h1 class="title">Comments</h1>
+
+  
+      <div id="fb-root"></div>
+<script>
+  (function(d, s, id) {
+    var js, fjs = d.getElementsByTagName(s)[0];
+    if (d.getElementById(id)) return;
+    js = d.createElement(s); js.id = id;
+    js.src = "//connect.facebook.net/en_US/all.js#xfbml=1&appId=123456789012345";
+    fjs.parentNode.insertBefore(js, fjs);
+  }(document, 'script', 'facebook-jssdk'));
+</script>
+
+<div class="fb-comments" data-href="https://www.works-on-my-machine.com/2017/04/20/s3-lambda/index.html" data-num-posts="5" data-width="840" data-colorscheme="light"></div>
+      
+  
+</section>
+
+</div></div>
+    <aside id="sidebar" class="alignright">
+  <div class="search">
+  <form action="//google.com/search" method="get" accept-charset="utf-8">
+    <input type="search" name="q" results="0" placeholder="Search">
+    <input type="hidden" name="as_sitesearch" value="www.works-on-my-machine.com">
+  </form>
+</div>
+
+
+  
+
+  
+<div class="widget tag">
+  <h3 class="title">Tags</h3>
+  <ul class="entry">
+  
+    <li><a href="/tags/AWS/">AWS</a><small>1</small></li>
+  
+    <li><a href="/tags/Azure/">Azure</a><small>1</small></li>
+  
+    <li><a href="/tags/Blockchain/">Blockchain</a><small>1</small></li>
+  
+    <li><a href="/tags/CryptoCurrency/">CryptoCurrency</a><small>1</small></li>
+  
+    <li><a href="/tags/Data/">Data</a><small>1</small></li>
+  
+    <li><a href="/tags/Lambda/">Lambda</a><small>1</small></li>
+  
+    <li><a href="/tags/Python/">Python</a><small>1</small></li>
+  
+    <li><a href="/tags/S3/">S3</a><small>1</small></li>
+  
+    <li><a href="/tags/Tableau/">Tableau</a><small>1</small></li>
+  
+  </ul>
+</div>
+
+</aside>
+    <div class="clearfix"></div>
+  </div>
+  <footer id="footer" class="inner"><div class="alignleft">
+  
+  &copy; 2023 Markus Ziller
+  
+</div>
+<div class="clearfix"></div></footer>
+  
+<script src="/js/jquery-3.4.1.min.js"></script>
+
+
+<script src="/js/jquery.imagesloaded.min.js"></script>
+
+
+<script src="/js/gallery.js"></script>
+
+
+
+
+
+
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+
+
+<script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+<script>
+(function($){
+  $('.fancybox').fancybox();
+})(jQuery);
+</script>
+
+</body>
+</html>

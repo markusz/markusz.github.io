@@ -1,0 +1,241 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  
+  <title>Distribution of Pokémon in Munich | Works on my machine</title>
+  <meta name="author" content="Markus Ziller">
+  
+  <meta name="description" content="Talking about tech stuff I do">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+  <meta property="og:title" content="Distribution of Pokémon in Munich"/>
+  <meta property="og:site_name" content="Works on my machine"/>
+
+  
+    <meta property="og:image" content=""/>
+  
+
+  <link rel="shortcut icon" href="/favicon.png">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  <!--[if lt IE 9]><script src="https://cdn.jsdelivr.net/npm/html5shiv@3.7.3/dist/html5shiv.min.js"></script><![endif]-->
+  
+
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+
+<body>
+  <header id="header" class="inner"><div class="alignleft">
+  <h1><a href="/">Works on my machine</a></h1>
+  <h2><a href="/">console.log(&#39;sdfadgqgadfggaggfsfsfsdthis message should not appear wtf&#39;)</a></h2>
+</div>
+<nav id="main-nav" class="alignright">
+  <ul>
+    
+      <li><a href="/null">Home</a></li>
+    
+      <li><a href="/archives">Archives</a></li>
+    
+  </ul>
+  <div class="clearfix"></div>
+</nav>
+<div class="clearfix"></div>
+</header>
+  <div id="content" class="inner">
+    <div id="main-col" class="alignleft"><div id="wrapper"><article id="post-pokemunich-analysis" class="h-entry post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  
+  <div class="post-content">
+    <header>
+      
+        <div class="icon"></div>
+        <time class="dt-published" datetime="2016-08-10T16:57:49.000Z"><a href="/2016/08/10/pokemunich-analysis/">10.08.2016</a></time>
+      
+      
+  
+    <h1 class="p-name title" itemprop="headline name">Distribution of Pokémon in Munich</h1>
+  
+
+    </header>
+    <div class="e-content entry" itemprop="articleBody">
+      
+        <p>After the launch of Pokémon Go at the beginning of July everyone seemed to be on the lookout for Pokémon. While I found the hunt for Pokémon to become tedious after a week or two, I found the idea to have a look at the data behind the game a lot more interesting. To that end, I forked the very popular <a target="_blank" rel="noopener" href="https://github.com/AHAAAAAAA/PokemonGo-Map">Pokémon Go Map</a> project and added some logic to collect and store the data in a MySQL database.</p>
+<p>I then used Tableau to build some fancy visualizations of the dataset at hand. All the data I will refer to later can be found <a target="_blank" rel="noopener" href="https://s3.eu-central-1.amazonaws.com/pokemunich/pokemon-munich.zip">here</a></p>
+<h3 id="TL-DR-Did-analytics-and-visualizations-on-Pokemon-see-Interactive-Tableau-Sheet"><a href="#TL-DR-Did-analytics-and-visualizations-on-Pokemon-see-Interactive-Tableau-Sheet" class="headerlink" title="TL;DR: Did analytics and visualizations on Pokémon - see Interactive Tableau Sheet"></a><strong>TL;DR: Did analytics and visualizations on Pokémon - see <a target="_blank" rel="noopener" href="https://public.tableau.com/views/MunichsPokemon/distributionpertypeandorder?:embed=y&:display_count=yes&publish=yes">Interactive Tableau Sheet</a></strong></h3><h2 id="The-Data"><a href="#The-Data" class="headerlink" title="The Data"></a>The Data</h2><p>The data collected by the script is pretty raw and simple, with essentially a single table only containing ~206k rows, each one representing the appearance of a single Pokémon. The area I scanned can be best described as a hexagon with a “radius” of around 3.65km (&#x3D;34.6km²) around the center of Munich, Germany. This already gives us some interesting statistics (within certain margin of error of course - see my thoughts regarding the quality of the data below), i.e. a Pokémon appearance rate of 124 Pokémon &#x2F; km² &#x2F; h.</p>
+<p><img src="/images/pokemon-table.png" alt="Raw Pokémon data"></p>
+<p>This raw data is already interesting on its own, since it contains 3 relevant dimensions: the <code>ID</code> of the Pokémon as well as <code>time</code> and <code>location</code> of its appearance. However, in order to allow for a more extensive and human-friendly representation, we need more data, which I - of course - found in the depth of the internet in the form of an unbelievable number of projects aiming at bringing Pokémon into a structured, queryable format. This allowed me to extract additional data like details, evolution levels or types and store them in my database as well.</p>
+<p>Using some simple SQL statements, I created a single SQL table that made a few changes to the original data:</p>
+<ul>
+<li>Added the type of the Pokémon (id + human-friendly name)</li>
+<li>Added the <code>groupId</code> and <code>groupOrder</code> are used to enable clustering on a finer lever by adding Pokémon into logical groups, i.e. Bulbasaur and all its evolutions would be have <code>groupId=1</code> and the respective orders 1,2,3. The screenshot below illustrates this.</li>
+</ul>
+<img src="/images/groups.png" class="" width="400" title="[groupId and groupOrder]">
+
+<ul>
+<li>Added the German and English name of the Pokémon</li>
+<li>Replaced the complicated alphanumeric <code>encounter_id</code> with a numeric <code>encounterId</code></li>
+<li>Omitted <code>spawnpoint_id</code>, which seemed to be only random, non-repeating IDs</li>
+</ul>
+<p>We can now use this table and join it with the other tables to create the final result that we’ll use for the visualizations. The following query will give us everything we need - I’m sure it can be further optimized by proper indexes, temporary tables and SQL Voodoo, but since it completes in less than 20 seconds, I didn’t really bother.</p>
+<figure class="highlight sql"><figcaption><span>aggregation.sql</span></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span> </span><br><span class="line">    p.enc_id <span class="keyword">AS</span> encounterId,</span><br><span class="line">    p.pokemon_id <span class="keyword">AS</span> pokemonId,</span><br><span class="line">    pd.name_de <span class="keyword">AS</span> nameDE,</span><br><span class="line">    pd.name_en <span class="keyword">AS</span> nameEN,</span><br><span class="line">    pd.groupId,</span><br><span class="line">    IF(id <span class="operator">&lt;</span> <span class="number">4</span>, id, (pd.id <span class="operator">%</span> pp.groupStartsAt) <span class="operator">+</span> <span class="number">1</span>) <span class="keyword">AS</span> groupOrder,</span><br><span class="line">    pt.type_id <span class="keyword">AS</span> typeId,</span><br><span class="line">    t.type <span class="keyword">AS</span> pokemonType,</span><br><span class="line">    p.latitude <span class="keyword">AS</span> lat,</span><br><span class="line">    p.longitude <span class="keyword">AS</span> lng,</span><br><span class="line">    UNIX_TIMESTAMP(p.disappear_time) <span class="keyword">AS</span> disappearsAt</span><br><span class="line"><span class="keyword">FROM</span></span><br><span class="line">    (<span class="keyword">SELECT</span> </span><br><span class="line">        pp.<span class="operator">*</span>, <span class="variable">@rownum</span>:<span class="operator">=</span><span class="variable">@rownum</span> <span class="operator">+</span> <span class="number">1</span> <span class="keyword">AS</span> enc_id</span><br><span class="line">    <span class="keyword">FROM</span></span><br><span class="line">        pokemon pp, (<span class="keyword">SELECT</span> <span class="variable">@rownum</span>:<span class="operator">=</span><span class="number">0</span>) r</span><br><span class="line">    <span class="keyword">WHERE</span></span><br><span class="line">        pp.disappear_time <span class="operator">&gt;</span> <span class="string">&#x27;2016-07-26 00:00:00&#x27;</span></span><br><span class="line">    <span class="keyword">ORDER</span> <span class="keyword">BY</span> pp.disappear_time <span class="keyword">ASC</span>) <span class="keyword">AS</span> p</span><br><span class="line">        <span class="keyword">JOIN</span></span><br><span class="line">		(pokemon_types pt, </span><br><span class="line">		pokemon_details pd, </span><br><span class="line">		types t, </span><br><span class="line">		(<span class="keyword">SELECT</span> </span><br><span class="line">			groupId, id <span class="keyword">AS</span> groupStartsAt</span><br><span class="line">		<span class="keyword">FROM</span></span><br><span class="line">			pokemon_details</span><br><span class="line">		<span class="keyword">GROUP</span> <span class="keyword">BY</span> groupId) </span><br><span class="line">        <span class="keyword">AS</span> pp)</span><br><span class="line">    <span class="keyword">ON</span> (p.pokemon_id <span class="operator">=</span> pt.pokemon_id</span><br><span class="line">        <span class="keyword">AND</span> p.pokemon_id <span class="operator">=</span> pd.id</span><br><span class="line">        <span class="keyword">AND</span> t.type_id <span class="operator">=</span> pt.type_id</span><br><span class="line">        <span class="keyword">AND</span> pp.groupId <span class="operator">=</span> pd.groupId)</span><br><span class="line"><span class="keyword">ORDER</span> <span class="keyword">BY</span> encounterId , disappearsAt <span class="keyword">ASC</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="Enhanced-Data"><a href="#Enhanced-Data" class="headerlink" title="Enhanced Data"></a>Enhanced Data</h3><p>Adding the type of a Pokémon increased the number of entries from 205k to 322k since a Pokémon can have multiple types and thus will be listed once for each type, i.e. Pidgey in the screenshot below. We will account for this later in Tableau by making sure we use <code>type</code> as a dimension in our vizs.</p>
+<p><img src="/images/pokemon-enhanced-table.png" alt="Enhanced Pokémon data"></p>
+<h2 id="Preprocessing"><a href="#Preprocessing" class="headerlink" title="Preprocessing"></a>Preprocessing</h2><p>Tableau proved to be surprisingly clumsy in handling CSV as import data, making it hard for me to bring the data in the desired form. After a few unsatisfying attempts to properly import the CSV with Tableau, I decided to do the preprocessing in Excel and then use this sheet as a data source for the import to Tableau. This went significantly smoother then importing from CSV and gave me nice data to work with. The only things that remained to be adjusted manually where:</p>
+<ul>
+<li>Transforming the Unix Time of <code>disappear</code> to a proper date using the following formula: <code>DATEADD(&#39;hour&#39;,-8,(Date(&quot;1/1/1970&quot;) + ([disappears]/86400)))</code></li>
+<li>Changing the type of ids from continuous to discrete numbers</li>
+<li>Tell Tableau that the decimals are actually lat &#x2F; long coordinates</li>
+</ul>
+<h2 id="Quality-of-the-data"><a href="#Quality-of-the-data" class="headerlink" title="Quality of the data"></a>Quality of the data</h2><p>The available data had a few flaws that we should talk about before continuing.</p>
+<h3 id="Missing-Data"><a href="#Missing-Data" class="headerlink" title="Missing Data"></a>Missing Data</h3><p>While collecting the data, I paused the script multiple times for a short while. In this time, no data has been collected at all. This is not a problem if we display the data on a map, but distorts the visualization in time based charts.</p>
+<p><img src="/images/missing-data-1.png" alt="Missing data"><br><img src="/images/missing-data-2.png" alt="Distorted visualization"></p>
+<h3 id="Changing-search-radius"><a href="#Changing-search-radius" class="headerlink" title="Changing search radius"></a>Changing search radius</h3><p>In addition to stopping the script several times, I also changed the parameters of it multiple times, i.e. increasing&#x2F;decreasing the search radius. This had a direct influence on the number of Pokémon found in a certain interval. As a result of this, absolute numbers are not comparable for different timespans.</p>
+<p><img src="/images/pokemon-cardinality.png" alt="Total appearances per hour"></p>
+<h3 id="Geographical-distribution"><a href="#Geographical-distribution" class="headerlink" title="Geographical distribution"></a>Geographical distribution</h3><p>Caused by the way the algorithm works (simulating a Pokémon Go player running in an endless spiral from the inside to the outside and then starting over from the center again), the likelihood of missing the appearance of a Pokémon gets higher, the further you move away from the center. We can see this by using the cluster function of Tableau with the number of appearances of a Pokémon as its only parameter. This gives us three clusters (low&#x3D;red, medium&#x3D;yellow, high&#x3D;blue) for the number of total appearances.</p>
+<p><img src="/images/pokemon-cluster.png" alt="Cluster"></p>
+<p>This clustering is also influenced by the change in search radius, but in my opinion mostly caused by the increased probability of missing a Pokémon in the areas further away from the center.</p>
+<h3 id="disappearTime"><a href="#disappearTime" class="headerlink" title="disappearTime"></a><code>disappearTime</code></h3><p>The data we use when aggregating over time is not actually the time when the Pokémon appeared on the map, but rather the date when it will disappear. This is again due to the way the script works, which leads to the fact that we neither know the actual time of appearance nor the Pokémon Go API telling us when a certain Pokémon did actually appear. However, since Niantic tells us the disappear date of each Pokémon, we just assume that each Pokémon stays on the map for the same duration and thus can use the <code>disappear</code> for our timeline, especially when looking for interesting pattern rather than concrete predictions.</p>
+<h1 id="Visualization"><a href="#Visualization" class="headerlink" title="Visualization"></a>Visualization</h1><p>The Tableau Sheet I created is <a target="_blank" rel="noopener" href="https://public.tableau.com/views/MunichsPokemon/PokmonStory?:embed=y&:display_count=yes&publish=yes">available here</a> and you can try out everything I’ll describe here - which you should absolutely do.</p>
+<h2 id="Count-per-type"><a href="#Count-per-type" class="headerlink" title="Count per type"></a>Count per type</h2><p>This visualization shows all the Pokémon for a certain type (i.e. Bug, Fire, ..) on a map. Pokémon belonging to the same group (i.e. <code>Weedle -&gt; Kakuna -&gt; Beedrill</code>) have the same base color. The size of the marker on the map indicates the number of total appearances for this particular Pokémon. If you analyze the data, different pattern emerge, i.e. for Pokémon of type bug, you can see in the example below, that all three Pokémon of the <code>Weedle -&gt; Kakuna -&gt; Beedrill</code> evolution chain are found in exactly the same places, just with decreasing probability.</p>
+<p><img src="/images/pokemon-count-per-type.png" alt="Bug-Pokémon found on map"><br><img src="/images/pokemon-count-per-type-5-weedle.png" alt="Weedle found on map"><br><img src="/images/pokemon-count-per-type-6-kakuna.png" alt="Kakuna found on map"><br><img src="/images/pokemon-count-per-type-7-beedrill.png" alt="Beedrill found on map"></p>
+<p>Each pattern is interesting on its own and there’s not enough time to talk about each own here, but one I found particularly interesting is the distribution pattern of the rare Dragon Pokémon, which seems to be aligned with Munich’s heavily frequented Altstadtring and the river Isar.</p>
+<p><img src="/images/pokemon-count-per-type-76-dragon.png" alt="Dragons found on map"></p>
+<h2 id="Count-per-type-and-evolution"><a href="#Count-per-type-and-evolution" class="headerlink" title="Count per type and evolution"></a>Count per type and evolution</h2><p>This is probably one of the neatest visualizations since it shows a lot of information in a visually very appealing way. It’s basically the same concept like the one we already talked about, but instead of using just one map, we use a grid of maps, where the X-axis is the evolution (aka <code>groupOrder</code>) of the Pokémon and the Y-axis is the type. Again I really encourage you to look at the <a target="_blank" rel="noopener" href="https://public.tableau.com/views/MunichsPokemon/distributionpertypeandorder?:embed=y&:display_count=yes&publish=yes">interactive Tableau Sheet</a> by yourself - you can do it all in your browser and apply your own filters &#x2F; constraints.</p>
+<p><img src="/images/pokemon-type-and-evolution.png" alt="Map grid"></p>
+<h2 id="Spawns-over-time"><a href="#Spawns-over-time" class="headerlink" title="Spawns over time"></a>Spawns over time</h2><p>That’s a cool one, too. It shows the spawns of all Pokémon on a timeline (in minutes), grouped by Pokémon groups. Each pixel-wide line marks the spawntime (actually <code>disappearsAt</code> - see above) of a Pokémon, color coded by <code>group</code> and <code>pokemonId</code>. You can see that there has been barely a minute, where no Pidgey has spawned somewhere in the area we scanned. You can also see, that spawntimes seem to be distributed fairly even, although the frequency decreases the higher a Pokémon’s evolution level is.</p>
+<p><img src="/images/pokemon-spawn-over-time.png" alt="Spawn over time"></p>
+<h2 id="Statistical-analysis"><a href="#Statistical-analysis" class="headerlink" title="Statistical analysis"></a>Statistical analysis</h2><p>Another interesting way of looking at the available data is taking coordinates as what they actually are: decimal numbers. This allows as to apply statistical metrics like average or median on them and get valid lat&#x2F;long coordinates as well, which we can than visualize again, i.e. by showing both the average an median spawn points of each Pokémon on our map. The chart shows a higher density of spawn point in the center for the average compared to the median. This reflects what we saw on the previous visualizations as well: More Pokémon spawned in the center than to towards the borders of the scanned area.</p>
+<p><img src="/images/pokemon-avg-median-spawn.png" alt="Median and average spawns of Pokémon"></p>
+<p>We can also look at metrics like the standard deviation of the spawn points of each Pokémon. This shows how outspread the individual spawn points around the average spawn point of each Pokémon are, meaning that the further a Pokémon is to the right&#x2F;top of the plot, the higher its deviation is. The plot shows the deviation in meters, which at such low distances can be fairly accurately derived from the lat&#x2F;long distances without having to account for the curvature of the earth.</p>
+<p>When we look at the median of the standard deviations, we can claim (I know: this is very simplified and not really significant) that the average Pokémon appears 1.8km north&#x2F;south and 1.4km east&#x2F;west from its arithmetical center.</p>
+<p>I also tried to find some clusters in the standard deviation plot, but neither <code>type</code> nor <code>group</code> nor <code>groupId</code> resulted in any significant clusters. The clustering in the screenshot below is solely based on the standard deviation of <code>lat</code> and <code>long</code>, which obviously finds (meaningless) clusters.</p>
+<p><img src="/images/pokemon-stdev.png" alt="Median and average spawns of Pokémon"></p>
+<h1 id="Conclusion"><a href="#Conclusion" class="headerlink" title="Conclusion"></a>Conclusion</h1><p>There’s no real conclusion, but we nonetheless found out a few interesting things about where, when and how Pokémon appear in Pokémon Go.</p>
+<ul>
+<li>Spawn rate and ratio seem to be constant and are not changing over time.</li>
+<li>Related Pokémon most of the time spawn in the same areas, although the higher evolved, the less frequent.</li>
+<li>Pokémon tend to appear near places that match their type, i.e. Water Pokémon are mostly found near rivers (The same applies for Ice and - weirdly enough - Fire Pokémon).</li>
+<li>95.6% of all recorded Pokémon are of the lowest evolution level (1), 4.1% have evolved to the second level and only 0.32% have reached evolution level 3.</li>
+<li>There’s a Pidgey and Rattata epidemic in Munich, with each accounting for 14% of all Pokémon.</li>
+<li>28 Pokémon never showed up in Munich, 123 out of 151 however did.</li>
+<li>There is a relation between evolution level and spawn rate&#x2F;probability (not really surprising), but there is no statistically significant relation between evolution level and spread over the map.</li>
+</ul>
+<p>I really enjoyed putting this together and hope you found it as fascinating as I did :).</p>
+<p><strong>Edit November 2016</strong> Niantic effectively locked-out all crawlers and bots by now, so there will be no fresh data to be collected.</p>
+
+      
+    </div>
+    <footer>
+      
+        
+        
+  
+  <div class="tags">
+    <a href="/tags/Python/">Python</a>, <a href="/tags/Tableau/">Tableau</a>, <a href="/tags/Data/">Data</a>
+  </div>
+
+      
+      <div class="clearfix"></div>
+    </footer>
+  </div>
+</article>
+
+
+<section id="comment">
+  <h1 class="title">Comments</h1>
+
+  
+      <div id="fb-root"></div>
+<script>
+  (function(d, s, id) {
+    var js, fjs = d.getElementsByTagName(s)[0];
+    if (d.getElementById(id)) return;
+    js = d.createElement(s); js.id = id;
+    js.src = "//connect.facebook.net/en_US/all.js#xfbml=1&appId=123456789012345";
+    fjs.parentNode.insertBefore(js, fjs);
+  }(document, 'script', 'facebook-jssdk'));
+</script>
+
+<div class="fb-comments" data-href="https://www.works-on-my-machine.com/2016/08/10/pokemunich-analysis/index.html" data-num-posts="5" data-width="840" data-colorscheme="light"></div>
+      
+  
+</section>
+
+</div></div>
+    <aside id="sidebar" class="alignright">
+  <div class="search">
+  <form action="//google.com/search" method="get" accept-charset="utf-8">
+    <input type="search" name="q" results="0" placeholder="Search">
+    <input type="hidden" name="as_sitesearch" value="www.works-on-my-machine.com">
+  </form>
+</div>
+
+
+  
+
+  
+<div class="widget tag">
+  <h3 class="title">Tags</h3>
+  <ul class="entry">
+  
+    <li><a href="/tags/AWS/">AWS</a><small>1</small></li>
+  
+    <li><a href="/tags/Azure/">Azure</a><small>1</small></li>
+  
+    <li><a href="/tags/Blockchain/">Blockchain</a><small>1</small></li>
+  
+    <li><a href="/tags/CryptoCurrency/">CryptoCurrency</a><small>1</small></li>
+  
+    <li><a href="/tags/Data/">Data</a><small>1</small></li>
+  
+    <li><a href="/tags/Lambda/">Lambda</a><small>1</small></li>
+  
+    <li><a href="/tags/Python/">Python</a><small>1</small></li>
+  
+    <li><a href="/tags/S3/">S3</a><small>1</small></li>
+  
+    <li><a href="/tags/Tableau/">Tableau</a><small>1</small></li>
+  
+  </ul>
+</div>
+
+</aside>
+    <div class="clearfix"></div>
+  </div>
+  <footer id="footer" class="inner"><div class="alignleft">
+  
+  &copy; 2023 Markus Ziller
+  
+</div>
+<div class="clearfix"></div></footer>
+  
+<script src="/js/jquery-3.4.1.min.js"></script>
+
+
+<script src="/js/jquery.imagesloaded.min.js"></script>
+
+
+<script src="/js/gallery.js"></script>
+
+
+
+
+
+
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+
+
+<script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+<script>
+(function($){
+  $('.fancybox').fancybox();
+})(jQuery);
+</script>
+
+</body>
+</html>
